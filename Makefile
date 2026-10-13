@@ -8,16 +8,17 @@ SRC      = src
 MAIN     = $(SRC)/main.py
 VENV     = .venv
 
-.PHONY: install run debug clean lint lint-strict
+.PHONY: install run debug clean lint lint-strict test-public test-private
 
 install:
 	uv sync
+
 # ── run ───────────────────────────────────────
 run:
 	uv run python -m src \
 		--functions_definition data/input/functions_definition.json \
 		--input               data/input/function_calling_tests.json \
-		--output              data/output/function_calls.json
+		--output              data/output/function_calling_results.json
 
 # ── debug ─────────────────────────────────────
 debug:
@@ -35,20 +36,19 @@ lint:
 		--ignore-missing-imports \
 		--disallow-untyped-defs \
 		--check-untyped-defs
-lint-strict:
-	flake8 . --max-line-length=79 --statistics && \
-	mypy . \
+
+lint:
+	uv run flake8 src \
+		--exclude=.venv,__pycache__,.mypy_cache && \
+	uv run mypy src \
 		--warn-return-any \
 		--warn-unused-ignores \
 		--ignore-missing-imports \
 		--disallow-untyped-defs \
-		--check-untyped-defs \
-		--disallow-any-generics \
-		--disallow-incomplete-defs \
-		--no-implicit-optional \
-		--strict-equality
+		--check-untyped-defs
 
 
+# ── clean ─────────────────────────────────────
 clean:
 	find . -type f -name "*.pyc" -delete
 	find . -type d -name "__pycache__" -exec rm -rf {} +

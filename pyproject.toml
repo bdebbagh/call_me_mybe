@@ -5,7 +5,7 @@ description = "A Python project exploring LLM function-calling capabilities."
 requires-python = ">=3.10"
 dependencies = [
     "pydantic>=2.0",
-    "numpy>=1.26",
+    "numpy>=1.26,<2",
     "llm-sdk",
 ]
 

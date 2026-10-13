@@ -2,7 +2,7 @@ import argparse
 from src.io_handler import load_functions_definition, load_test_prompts
 from src.pipeline import run_pipeline
 from src.decoder import VocabularyManager
-from llm_sdk import Small_LLM_Model
+from llm_sdk import Small_LLM_Model  # type: ignore
 
 
 def parse_args() -> argparse.Namespace:
@@ -19,7 +19,7 @@ def parse_args() -> argparse.Namespace:
     )
     parser.add_argument(
         "--output",
-        default="data/output/function_calls.json",
+        default="data/output/function_calling_results.json",
         help="Path to the output file"
     )
     return parser.parse_args()
@@ -28,7 +28,6 @@ def parse_args() -> argparse.Namespace:
 def main() -> None:
     args = parse_args()
 
-    # load input files
     functions = load_functions_definition(args.functions_definition)
     print(f"\n[main] Loaded {len(functions)} function definitions:")
     for fn in functions:
@@ -39,7 +38,6 @@ def main() -> None:
     for p in prompts:
         print(f"  - {p.prompt}")
 
-    # load model and vocabulary
     print("\n[main] Loading model...")
     model = Small_LLM_Model()
 
@@ -47,7 +45,6 @@ def main() -> None:
     vocab = VocabularyManager(path=vocab_path)
     print(f"[main] Loaded vocabulary: {len(vocab.token_to_id)} tokens")
 
-    # run the full pipeline
     run_pipeline(prompts, functions, model, vocab, args.output)
 
 

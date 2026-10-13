@@ -1,9 +1,8 @@
 import json
-
 import numpy as np
 from pydantic import BaseModel
 from src.models import FunctionDefinition
-from llm_sdk import Small_LLM_Model
+from llm_sdk import Small_LLM_Model  # type: ignore
 
 
 class VocabularyManager(BaseModel):
@@ -19,10 +18,12 @@ class VocabularyManager(BaseModel):
             with open(self.path, "r") as f:
                 raw_data = json.load(f)
         except FileNotFoundError:
-            print(f"[VocabularyManager] ERROR: vocab file not found at '{self.path}'")
+            print(f"[VocabularyManager] ERROR: vocab file not found at "
+                  f"'{self.path}'")
             return
         except json.JSONDecodeError as e:
-            print(f"[VocabularyManager] ERROR: invalid JSON in '{self.path}': {e}")
+            print(f"[VocabularyManager] ERROR: invalid JSON in '{self.path}': "
+                  f"{e}")
             return
 
         self.token_to_id = raw_data
@@ -54,10 +55,7 @@ def select_function_name(
     model: Small_LLM_Model,
     vocab: VocabularyManager,
 ) -> str:
-    """Uses constrained decoding to pick which function matches the prompt.
-
-    Returns the exact function name string e.g. 'fn_add_numbers'.
-    """
+    """Uses constrained decoding to pick which function matches the prompt."""
 
     candidates = [fn.name for fn in functions]
 
@@ -124,13 +122,7 @@ def extract_arguments(
     model: Small_LLM_Model,
     vocab: VocabularyManager,
 ) -> dict[str, str | int | float]:
-    """Extracts argument values from the prompt for the chosen function.
 
-    Works for any function with any number of parameters.
-    Returns dict like {"a": 2.0, "b": 3.0} or {"name": "shrek"}.
-    """
-
-    # --- step 1: find the chosen function ---
     chosen_function = None
     for fn in functions:
         if fn.name == function_name:
@@ -138,73 +130,56 @@ def extract_arguments(
             break
 
     if chosen_function is None:
-        raise ValueError(f"Function '{function_name}' not found in definitions")
+        raise ValueError(f"Function '{function_name}' not found in "
+                         f"definitions")
 
-    # --- step 2: build description of all parameters ---
-    # example: "a (number), b (number)"
-    # this helps the model understand what each parameter means
     params_description = ""
     for pname, pdef in chosen_function.parameters.items():
         if params_description != "":
             params_description += ", "
         params_description += f"{pname} ({pdef.type})"
 
-    # --- step 3: get list of parameters to extract ---
     param_items = list(chosen_function.parameters.items())
 
-    # will hold extracted values as we go
     extracted: dict[str, str | int | float] = {}
 
-    # --- step 4: loop once per parameter ---
     for param_name, param_def in param_items:
 
-        param_type = param_def.type  # "number" or "string"
-
-        # build the JSON text of parameters already extracted
+        param_type = param_def.type
         already_extracted = ""
         for k, v in extracted.items():
             if already_extracted != "":
                 already_extracted += ", "
             already_extracted += f'"{k}": {json.dumps(v)}'
 
-        # build params_so_far — what goes inside "parameters": { ... }
         if already_extracted != "":
             params_so_far = already_extracted + f', "{param_name}": '
         else:
             params_so_far = f'"{param_name}": '
 
-        # build the full prompt
-        # includes function description and parameter names
-        # so model understands what value to extract
-        # example for regex param:
-        #   Function: fn_substitute_string_with_regex
-        #   Description: Replace all occurrences matching a regex pattern in a string.
-        #   Parameters needed: source_string (string), regex (string), replacement (string)
-        #   User request: Replace all vowels in 'Programming is fun' with asterisks
-        #   {"name": "fn_substitute_string_with_regex", "parameters": {
-        #     "source_string": "Programming is fun", "regex": "
         prompt_context = (
             "You are a function calling assistant.\n"
             + f"Function: {function_name}\n"
             + f"Description: {chosen_function.description}\n"
             + f"Parameters needed: {params_description}\n"
+            + "Example: Replace all digits with X → "
+            + '{"name": "fn_substitute_string_with_regex", '
+            + '"parameters": {"source_string": "abc123", '
+            + '"regex": "\\d+", "replacement": "*"}}\n'
             + f"User request: {prompt}\n"
             + '{"name": "' + function_name + '", "parameters": {'
             + params_so_far
         )
 
-        # for strings: add opening quote so model continues from inside the string
         if param_type == "string":
             prompt_context += '"'
 
-        # tokenize the prompt
         input_ids = model.encode(prompt_context)[0].tolist()
         current_ids = input_ids
         generated_value = ""
         step = 0
         max_steps = 100
 
-        # --- generation loop for this one parameter ---
         while True:
             step += 1
             if step > max_steps:
@@ -212,20 +187,16 @@ def extract_arguments(
                     f"extract_arguments exceeded max steps for '{param_name}'"
                 )
 
-            # get 150,000 scores from model
             logits = model.get_logits_from_input_ids(current_ids)
             logits_np = np.array(logits)
 
-            # NUMBER: only allow digit tokens
-            if param_type == "number":
+            if param_type == "number" or param_type == "integer":
 
-                # get the token the model most wants to generate (no constraints)
-                best_free_token = vocab.id_to_token.get(int(np.argmax(logits_np)), "")
+                best_free_id = int(np.argmax(logits_np))
+                best_free_str = vocab.id_to_token.get(best_free_id, "").strip()
 
-                # if model's top choice is not a digit → number is complete
-                best_stripped = best_free_token.strip()
                 all_digit = True
-                for c in best_stripped:
+                for c in best_free_str:
                     if c not in "0123456789.-eE":
                         all_digit = False
                         break
@@ -233,7 +204,6 @@ def extract_arguments(
                 if not all_digit and generated_value != "":
                     break
 
-                # otherwise find valid digit tokens and pick best
                 valid_ids = []
                 for token_str, token_id in vocab.token_to_id.items():
                     stripped = token_str.strip()
@@ -254,59 +224,57 @@ def extract_arguments(
                 next_token_id = greedy_next_token(logits_np, valid_ids)
                 next_token_str = vocab.id_to_token[next_token_id].strip()
 
-                if not _is_valid_number_prefix(generated_value + next_token_str):
+                if not _is_valid_number_prefix(generated_value +
+                                               next_token_str):
                     break
 
                 generated_value += next_token_str
                 current_ids.append(next_token_id)
-            
-            
-            # STRING: allow everything except closing quote
+
             elif param_type == "string":
 
-                valid_ids = []
-                for token_str, token_id in vocab.token_to_id.items():
-                    if token_str.strip() != '"':
-                        valid_ids.append(token_id)
-
-                next_token_id = greedy_next_token(logits_np, valid_ids)
-                next_token_str = vocab.id_to_token[next_token_id]
-
-                # closing quote means string is complete
+                next_token_id = int(np.argmax(logits_np))
+                next_token_str = vocab.id_to_token.get(next_token_id, "")
                 if next_token_str.strip() == '"':
                     break
 
+                if '"' in next_token_str:
+                    part = next_token_str.split('"')[0]
+                    generated_value += part
+                    break
+
+                if len(generated_value) > 200:
+                    break
+
                 generated_value += next_token_str
                 current_ids.append(next_token_id)
 
-            # UNKNOWN TYPE: treat as string to avoid crash
             else:
                 print(
                     f"[decoder] WARNING: unknown type '{param_type}' "
                     f"for '{param_name}' — treating as string"
                 )
 
-                valid_ids = []
-                for token_str, token_id in vocab.token_to_id.items():
-                    if token_str.strip() != '"':
-                        valid_ids.append(token_id)
-
-                next_token_id = greedy_next_token(logits_np, valid_ids)
-                next_token_str = vocab.id_to_token[next_token_id]
+                next_token_id = int(np.argmax(logits_np))
+                next_token_str = vocab.id_to_token.get(next_token_id, "")
 
                 if next_token_str.strip() == '"':
+                    break
+
+                if len(generated_value) > 200:
                     break
 
                 generated_value += next_token_str
                 current_ids.append(next_token_id)
 
-        # convert generated text to correct Python type
         if param_type == "number":
             try:
                 extracted[param_name] = float(generated_value)
             except ValueError:
                 extracted[param_name] = 0.0
+
         else:
-            extracted[param_name] = generated_value.strip()
+            cleaned = generated_value.replace("Ġ", " ").strip()
+            extracted[param_name] = cleaned
 
     return extracted

@@ -1,8 +1,7 @@
 import json
 from pathlib import Path
 from typing import Any
-
-from  src.models import FunctionDefinition, TestPrompt
+from src.models import FunctionDefinition, TestPrompt
 
 
 def load_functions_definition(path: str | Path) -> list[FunctionDefinition]:
@@ -12,7 +11,8 @@ def load_functions_definition(path: str | Path) -> list[FunctionDefinition]:
         return [FunctionDefinition(**item) for item in data]
 
     except FileNotFoundError:
-        print(f"[io_handler] ERROR: Functions definition file not found: '{path}'")
+        print(f"[io_handler] ERROR: Functions definition file not found: "
+              f"'{path}'")
         return []
 
     except json.JSONDecodeError as e:
@@ -20,7 +20,8 @@ def load_functions_definition(path: str | Path) -> list[FunctionDefinition]:
         return []
 
     except Exception as e:
-        print(f"[io_handler] ERROR: Unexpected error loading functions definition: {e}")
+        print(f"[io_handler] ERROR: Unexpected error loading functions "
+              f"definition: {e}")
         return []
 
 
@@ -39,7 +40,8 @@ def load_test_prompts(path: str | Path) -> list[TestPrompt]:
         return []
 
     except Exception as e:
-        print(f"[io_handler] ERROR: Unexpected error loading test prompts: {e}")
+        print(f"[io_handler] ERROR: Unexpected error loading "
+              f"test prompts: {e}")
         return []
 
 
@@ -57,7 +59,8 @@ def save_results(results: list[Any], path: str | Path) -> None:
         with open(path, "w") as f:
             json.dump(serializable, f, indent=2, ensure_ascii=False)
 
-        print(f"[io_handler] Results saved to '{path}' ({len(results)} entries)")
+        print(f"[io_handler] Results saved to '{path}' ({len(results)} "
+              f"entries)")
 
     except OSError as e:
         print(f"[io_handler] ERROR: Could not write to '{path}': {e}")
